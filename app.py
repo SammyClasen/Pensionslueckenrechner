@@ -3,88 +3,110 @@ import pandas as pd
 from io import BytesIO
 from fpdf import FPDF
 
-# --- DATEN-LOADER ---
-@st.cache_data
-def load_besoldung():
-    try:
-        # Liest die hochgeladene CSV-Datei ein
-        return pd.read_csv("besoldung.csv", sep=";")
-    except FileNotFoundError:
-        st.error("Datei 'besoldung.csv' nicht gefunden. Bitte bei GitHub hochladen!")
-        return pd.DataFrame()
+# Konfiguration der Seite
+st.set_page_config(page_title="Beamten-Pensionsrechner Pro", layout="wide")
 
-df_besoldung = load_besoldung()
-
-# Definition der Berufsgruppen und ihrer Altersgrenzen
-BERUFSGRUPPEN = {
-    "Allgemeine Verwaltung": 67,
-    "Polizeivollzug": 62,
-    "Feuerwehr": 60,
-    "Justizvollzug": 63
-}
-
-# --- PDF FUNKTION ---
+# --- PDF GENERIERUNG (Sicher vor Sonderzeichen-Fehlern) ---
 def create_pdf(res, logo_file):
     pdf = FPDF()
     pdf.add_page()
-    if logo_file: pdf.image(BytesIO(logo_file.getvalue()), x=150, y=10, w=40)
+    
+    if logo_file:
+        logo_data = BytesIO(logo_file.getvalue())
+        pdf.image(logo_data, x=150, y=10, w=40)
+    
     pdf.set_font("Helvetica", "B", 16)
-    pdf.cell(0, 15, "Beamten-Pensionsanalyse Pro", ln=True)
-    pdf.ln(5)
-    pdf.set_font("Helvetica", "", 11)
-    for k, v in res.items():
-        pdf.cell(85, 9, f"{k}:", border=0)
-        pdf.cell(0, 9, f"{str(v)}", border=0, ln=True)
+    pdf.cell(0, 15, "Individuelle Pensionsanalyse", ln=True)
+    pdf.ln(10)
+    
+    pdf.set_font("Helvetica", "", 12)
+    for key, value in res.items():
+        # Ersetze Umlaute und Euro fuer PDF-Kompatibilitaet
+        safe_key = key.replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss")
+        safe_value = str(value).replace("€", "Euro")
+        
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(85, 10, f"{safe_key}:", border=0)
+        pdf.set_font("Helvetica", "", 11)
+        pdf.cell(0, 10, f"{safe_value}", border=0, ln=True)
+    
+    pdf.ln(20)
+    pdf.set_font("Helvetica", "I", 9)
+    pdf.multi_cell(0, 5, "Hinweis: Diese Berechnung stellt eine Schätzung dar (inkl. Abzug fuer Steuern/PKV). Keine Rechtsberatung.")
     return pdf.output()
 
-# --- HAUPTTEIL ---
-st.title("🛡️ Experten-Pensionsrechner (Alle Bundesländer)")
+# --- HAUPTPROGRAMM ---
+st.title("?? Beamten-Pensionsrechner")
+st.markdown("Berechnen Sie die voraussichtliche Pension und die monatliche Versorgungslücke.")
 
-if not df_besoldung.empty:
-    with st.sidebar:
-        st.header("Konfiguration")
-        land_sel = st.selectbox("Land / Dienstherr", df_besoldung["Land"].unique())
-        
-        gruppen = df_besoldung[df_besoldung["Land"] == land_sel]["Gruppe"].unique()
-        gruppe_sel = st.selectbox("Besoldungsgruppe", gruppen)
-        
-        stufe_sel = st.slider("Erfahrungsstufe", 1, 8, 4)
-        beruf_sel = st.selectbox("Berufszweig", list(BERUFSGRUPPEN.keys()))
-        uploaded_logo = st.file_uploader("Logo für PDF", type=["png", "jpg"])
+# Seitenleiste für Branding
+with st.sidebar:
+    st.header("Branding")
+    uploaded_logo = st.file_uploader("Firmenlogo hochladen (PNG/JPG)", type=["png", "jpg", "jpeg"])
+    st.info("Das Logo erscheint oben rechts im PDF-Protokoll.")
 
-    # Werte ermitteln
-    grundgehalt = df_besoldung[(df_besoldung["Land"] == land_sel) & 
-                               (df_besoldung["Gruppe"] == gruppe_sel)][f"Stufe_{stufe_sel}"].values[0]
-    altersgrenze = BERUFSGRUPPEN[beruf_sel]
+# Eingabe-Bereich
+col_in, col_spacer, col_res = st.columns([4, 1, 6])
 
-    # Eingaben für Dienstzeit
-    c1, c2 = st.columns(2)
-    with c1:
-        eintritt = st.number_input("Eintrittsalter", 18, 50, 28)
-        tz_jahre = st.number_input("Jahre in Teilzeit", 0, 45, 0)
-        tz_quote = st.slider("Teilzeit-Satz (%)", 10, 100, 50) if tz_jahre > 0 else 100
+with col_in:
+    st.subheader("Eingabedaten")
+    brutto = st.number_input("Aktuelles Brutto (Vollzeit) in €", value=5000, step=100)
+    eintritt = st.slider("Eintrittsalter", 18, 60, 28)
+    tz_jahre = st.number_input("Jahre in Teilzeit", value=0, min_value=0, max_value=45)
+    tz_quote = st.slider("Teilzeit-Quote (%)", 10, 100, 50) if tz_jahre > 0 else 100
 
-    # Berechnung
-    dienstzeit = altersgrenze - eintritt - tz_jahre + (tz_jahre * (tz_quote / 100))
-    satz = max(min(dienstzeit * 1.79375, 71.75), 35.0)
-    netto_pension = (grundgehalt * (satz / 100)) * 0.72
-    luecke = (grundgehalt * 0.75) - netto_pension
+# BERECHNUNGS-LOGIK
+# 1,79375% pro Dienstjahr, max 71,75%
+effektive_jahre = 67 - eintritt - tz_jahre + (tz_jahre * (tz_quote / 100))
+pensionssatz = min(effektive_jahre * 1.79375, 71.75)
+pensionssatz = max(pensionssatz, 35.0) # Mindestversorgung
 
-    res = {
-        "Dienstherr": land_sel,
-        "Status": f"{gruppe_sel}, Stufe {stufe_sel}",
-        "Grundgehalt": f"{grundgehalt:,.2f} Euro",
-        "Altersgrenze": f"{altersgrenze} Jahre",
-        "Pensionssatz": f"{satz:.2f} %",
-        "Netto-Pension": f"{netto_pension:,.2f} Euro",
-        "Versorgungsluecke": f"{luecke:,.2f} Euro"
-    }
+brutto_pension = brutto * (pensionssatz / 100)
+# Schaetzung: 72% vom Brutto bleiben nach Steuern und PKV
+netto_pension = brutto_pension * 0.72 
+netto_aktuell = brutto * 0.75
+luecke = max(0.0, netto_aktuell - netto_pension)
 
-    with c2:
-        st.subheader("Analyse")
-        st.metric("Pension (geschätzt)", f"{netto_pension:,.2f} €")
-        st.metric("Lücke", f"{luecke:,.2f} €", delta_color="inverse")
-        st.progress(satz / 71.75)
-        st.download_button("📄 PDF-Report", data=bytes(create_pdf(res, uploaded_logo)), file_name="Analyse.pdf")
-else:
-    st.warning("Bitte laden Sie zuerst die besoldung.csv hoch.")
+ergebnisse = {
+    "Dienstjahre (effektiv)": f"{effektive_jahre:.2f} Jahre",
+    "Ruhegehaltssatz": f"{pensionssatz:.2f} %",
+    "Erwartete Netto-Pension": f"{netto_pension:,.2f} €",
+    "Aktuelles Netto (geschätzt)": f"{netto_aktuell:,.2f} €",
+    "Monatliche Versorgungslücke": f"{luecke:,.2f} €"
+}
+
+# Anzeige-Bereich
+with col_res:
+    st.subheader("Ihre Analyse")
+    
+    m1, m2 = st.columns(2)
+    m1.metric("Erwartete Pension (Netto)", f"{netto_pension:,.2f} €")
+    m2.metric("Monatliche Lücke", f"{luecke:,.2f} €", delta=f"-{luecke:,.2f} €", delta_color="inverse")
+    
+    st.write(f"Ihr erreichter Pensionssatz: **{pensionssatz:.2f} %**")
+    st.progress(pensionssatz / 71.75)
+    
+    st.write("---")
+    st.subheader("Downloads")
+    
+    # PDF Button
+    pdf_bytes = create_pdf(ergebnisse, uploaded_logo)
+    st.download_button(
+        label="?? PDF-Protokoll mit Logo",
+        data=bytes(pdf_bytes),
+        file_name="Pensionsanalyse.pdf",
+        mime="application/pdf"
+    )
+
+    # Einfacher Excel-Export der Werte
+    df_export = pd.DataFrame(list(ergebnisse.items()), columns=['Analysepunkt', 'Wert'])
+    output_excel = BytesIO()
+    with pd.ExcelWriter(output_excel, engine='xlsxwriter') as writer:
+        df_export.to_excel(writer, index=False, sheet_name='Analyse')
+    
+    st.download_button(
+        label="?? Excel-Daten exportieren",
+        data=output_excel.getvalue(),
+        file_name="Pensionsberechnung.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
