@@ -17,7 +17,7 @@ def create_pdf(res, logo_file):
     
     # Logo einbinden, wenn vorhanden
     if logo_file:
-        # Streamlit-Upload in temporäre Datei oder Bytes umwandeln
+        # Streamlit-Upload in temporÃ¤re Datei oder Bytes umwandeln
         logo_data = BytesIO(logo_file.getvalue())
         pdf.image(logo_data, x=150, y=10, w=40) # Position: oben rechts
     
@@ -39,17 +39,17 @@ def create_pdf(res, logo_file):
     
     pdf.ln(20)
     pdf.set_font("Arial", "I", 9)
-    pdf.multi_cell(0, 5, "Rechtlicher Hinweis: Diese Berechnung basiert auf den aktuellen Versorgungssätzen von 1,79375% pro Dienstjahr und einem pauschalen Abzug für Steuern/PKV. Sie dient rein zur Illustration.")
+    pdf.multi_cell(0, 5, "Rechtlicher Hinweis: Diese Berechnung basiert auf den aktuellen VersorgungssÃ¤tzen von 1,79375% pro Dienstjahr und einem pauschalen Abzug fÃ¼r Steuern/PKV. Sie dient rein zur Illustration.")
     
     return pdf.output()
 
 # --- LOGIK & EINGABE ---
-st.title("?? Beamten-Pensionsrechner für Profis")
+st.title("?? Beamten-Pensionsrechner fÃ¼r Profis")
 
 col1, col2 = st.columns([1, 1])
 
 with col1:
-    brutto = st.number_input("Aktuelles Brutto (Vollzeit) in €", value=5000)
+    brutto = st.number_input("Aktuelles Brutto (Vollzeit) in â‚¬", value=5000)
     eintritt = st.number_input("Eintrittsalter", value=28)
     tz_jahre = st.number_input("Teilzeit-Jahre gesamt", value=5)
     tz_quote = st.slider("Mittlere Teilzeit-Quote (%)", 10, 100, 50)
@@ -64,14 +64,14 @@ luecke = max(0.0, netto_aktuell - netto_pension)
 ergebnisse = {
     "Dienstjahre (berechnet)": f"{dienstjahre:.2f} Jahre",
     "Ruhegehaltssatz": f"{satz:.2f} %",
-    "Voraussichtliche Pension (Netto)": f"{netto_pension:,.2f} €",
-    "Netto-Einkommen (Aktuell)": f"{netto_aktuell:,.2f} €",
-    "Monatliche Versorgungslücke": f"{luecke:,.2f} €"
+    "Voraussichtliche Pension (Netto)": f"{netto_pension:,.2f} â‚¬",
+    "Netto-Einkommen (Aktuell)": f"{netto_aktuell:,.2f} â‚¬",
+    "Monatliche VersorgungslÃ¼cke": f"{luecke:,.2f} â‚¬"
 }
 
 with col2:
     st.subheader("Analyse-Ergebnis")
-    st.metric("Pensionslücke", f"{luecke:,.2f} €", delta="- Monatlich", delta_color="inverse")
+    st.metric("PensionslÃ¼cke", f"{luecke:,.2f} â‚¬", delta="- Monatlich", delta_color="inverse")
     
     # Download Sektion
     st.write("### Dokumente generieren")
@@ -79,5 +79,5 @@ with col2:
     pdf_data = create_pdf(ergebnisse, uploaded_logo)
     st.download_button("?? PDF mit Logo herunterladen", data=bytes(pdf_data), file_name="Versorgungsanalyse.pdf", mime="application/pdf")
     
-    # Button für Excel (hier könntest du die Funktion aus der vorigen Antwort einbinden)
+    # Button fÃ¼r Excel (hier kÃ¶nntest du die Funktion aus der vorigen Antwort einbinden)
     st.button("?? Excel-Rechner generieren (Vorschau)")
